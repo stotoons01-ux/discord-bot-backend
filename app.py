@@ -92,15 +92,38 @@ def oauth_me():
     This avoids CORS issues when the frontend runs in the browser.
     """
     auth = request.headers.get('Authorization')
+    app.logger.info("GET /oauth/me - Received request")
+    
     if not auth or not auth.lower().startswith('bearer '):
+        app.logger.error("Missing or invalid Authorization header")
         return jsonify({'error': 'missing Authorization: Bearer <token> header'}), 401
 
     token = auth.split(None, 1)[1]
     try:
-        r = requests.get('https://discord.com/api/users/@me', headers={'Authorization': f'Bearer {token}'}, timeout=10)
+        app.logger.info("Calling Discord API /users/@me")
+        r = requests.get(
+            'https://discord.com/api/v10/users/@me',
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Accept': 'application/json'
+            },
+            timeout=10
+        )
+        app.logger.info(f"Discord API response status: {r.status_code}")
+        if not r.ok:
+            app.logger.error(f"Discord API error: {r.text}")
     except Exception as e:
+        app.logger.error(f"Failed to contact Discord API: {str(e)}")
         return jsonify({'error': 'failed to contact Discord API', 'details': str(e)}), 502
-    return (r.content, r.status_code, dict(r.headers))
+
+    try:
+        # Verify we got valid JSON before returning
+        response_data = r.json()
+        app.logger.info(f"Successfully got user data: {response_data.get('username', 'unknown')}")
+        return jsonify(response_data)
+    except ValueError as e:
+        app.logger.error(f"Invalid JSON response from Discord: {r.text[:200]}")
+        return jsonify({'error': 'invalid response from Discord', 'details': r.text[:200]}), 502
 
 
 @app.route('/oauth/guilds')
