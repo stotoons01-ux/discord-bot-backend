@@ -1,29 +1,39 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
+from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)  # allow frontend to connect
+CORS(app)
 
-# Temporary storage for bot stats
+# Track startup time for uptime display
+start_time = datetime.now()
+
+# Simple in-memory stats (bot can update these later)
 bot_stats = {
+    "bot_name": "Whiteout Survival",
     "servers": 0,
     "users": 0,
-    "uptime": "Unknown"
+    "uptime": "Starting..."
 }
 
 @app.route("/")
 def home():
-    return jsonify({"message": "Bot API is running!"})
+    """Root route to verify backend is live"""
+    return jsonify({"status": "online", "message": "Whiteout Survival API running!"})
 
 @app.route("/stats")
 def stats():
-    """Frontend calls this to get bot stats."""
+    """Frontend requests live bot stats"""
+    uptime_seconds = (datetime.now() - start_time).total_seconds()
+    hours = int(uptime_seconds // 3600)
+    minutes = int((uptime_seconds % 3600) // 60)
+    bot_stats["uptime"] = f"{hours}h {minutes}m"
     return jsonify(bot_stats)
 
 @app.route("/update_stats", methods=["POST"])
 def update_stats():
-    """Bot sends its current stats here."""
+    """Bot updates its stats here"""
     data = request.json or {}
     bot_stats.update(data)
     return jsonify({"success": True, "updated": bot_stats})
