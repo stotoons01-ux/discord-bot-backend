@@ -3,6 +3,11 @@ from flask_cors import CORS
 import os
 from datetime import datetime
 import requests
+from dotenv import load_dotenv
+
+# Load .env from backend/.env or project root during local development. In production
+# (Render) environment variables are provided via the dashboard and this is a no-op.
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
@@ -99,6 +104,45 @@ def oauth_guilds():
     except Exception as e:
         return jsonify({'error': 'failed to contact Discord API', 'details': str(e)}), 502
     return (r.content, r.status_code, dict(r.headers))
+
+
+@app.route('/bot/guilds_status', methods=['POST'])
+def bot_guilds_status():
+    """Check which of the provided guild IDs the bot is currently a member of.
+    Expects JSON: { guild_ids: ["id1","id2", ...] }
+    Requires environment variable: DISCORD_BOT_TOKEN and DISCORD_BOT_ID
+    Returns: { present: [...], missing: [...], errors: {guild_id: error_message} }
+    """
+    data = request.json or {}
+    guild_ids = data.get('guild_ids') or []
+    bot_token = os.environ.get('DISCORD_BOT_TOKEN')
+    bot_id = os.environ.get('DISCORD_BOT_ID')
+
+    if not bot_token or not bot_id:
+        return jsonify({'error': 'server missing DISCORD_BOT_TOKEN or DISCORD_BOT_ID env vars'}), 500
+
+    present = []
+    missing = []
+    errors = {}
+
+    headers = {'Authorization': f'Bot {bot_token}'}
+    for gid in guild_ids:
+        try:
+            url = f'https://discord.com/api/guilds/{gid}/members/{bot_id}'
+            r = requests.get(url, headers=headers, timeout=8)
+        except Exception as e:
+            errors[gid] = str(e)
+            continue
+
+        if r.status_code == 200:
+            present.append(gid)
+        elif r.status_code == 404:
+            missing.append(gid)
+        else:
+            # Other statuses are considered errors
+            errors[gid] = f'status={r.status_code} body={r.text[:300]}'
+
+    return jsonify({'present': present, 'missing': missing, 'errors': errors})
 
 @app.route("/update_stats", methods=["POST"])
 def update_stats():
