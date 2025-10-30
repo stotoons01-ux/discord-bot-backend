@@ -12,6 +12,18 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
+# Debug route to check environment variables
+@app.route("/debug/env")
+def debug_env():
+    """Debug route to verify environment variables (redacts sensitive parts)"""
+    env_status = {
+        'DISCORD_CLIENT_ID': bool(os.environ.get('DISCORD_CLIENT_ID')),
+        'DISCORD_CLIENT_SECRET': bool(os.environ.get('DISCORD_CLIENT_SECRET')),
+        'DISCORD_BOT_TOKEN': bool(os.environ.get('DISCORD_BOT_TOKEN')),
+        'DISCORD_BOT_ID': bool(os.environ.get('DISCORD_BOT_ID'))
+    }
+    return jsonify({"env_vars_present": env_status})
+
 # Track startup time for uptime display
 start_time = datetime.now()
 
@@ -115,8 +127,18 @@ def bot_guilds_status():
     """
     data = request.json or {}
     guild_ids = data.get('guild_ids') or []
+    
+    app.logger.info(f"Checking bot presence for guild IDs: {guild_ids}")
+    
     bot_token = os.environ.get('DISCORD_BOT_TOKEN')
     bot_id = os.environ.get('DISCORD_BOT_ID')
+
+    if not bot_token:
+        app.logger.error("DISCORD_BOT_TOKEN missing from environment")
+        return jsonify({'error': 'DISCORD_BOT_TOKEN not configured'}), 500
+    if not bot_id:
+        app.logger.error("DISCORD_BOT_ID missing from environment")
+        return jsonify({'error': 'DISCORD_BOT_ID not configured'}), 500
 
     if not bot_token or not bot_id:
         return jsonify({'error': 'server missing DISCORD_BOT_TOKEN or DISCORD_BOT_ID env vars'}), 500
@@ -129,18 +151,24 @@ def bot_guilds_status():
     for gid in guild_ids:
         try:
             url = f'https://discord.com/api/guilds/{gid}/members/{bot_id}'
+            app.logger.info(f"Checking guild {gid} with URL: {url}")
             r = requests.get(url, headers=headers, timeout=8)
+            app.logger.info(f"Response for guild {gid}: status={r.status_code}")
+            
+            if r.status_code == 200:
+                present.append(gid)
+                app.logger.info(f"Bot is present in guild {gid}")
+            elif r.status_code == 404:
+                missing.append(gid)
+                app.logger.info(f"Bot is missing from guild {gid}")
+            else:
+                error_msg = f'status={r.status_code} body={r.text[:300]}'
+                app.logger.error(f"Error checking guild {gid}: {error_msg}")
+                errors[gid] = error_msg
         except Exception as e:
+            app.logger.error(f"Exception checking guild {gid}: {str(e)}")
             errors[gid] = str(e)
             continue
-
-        if r.status_code == 200:
-            present.append(gid)
-        elif r.status_code == 404:
-            missing.append(gid)
-        else:
-            # Other statuses are considered errors
-            errors[gid] = f'status={r.status_code} body={r.text[:300]}'
 
     return jsonify({'present': present, 'missing': missing, 'errors': errors})
 
