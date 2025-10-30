@@ -1,0 +1,11 @@
+# Ignore local env files
+backend.env
+*.env
+venv/
+venv/**
+__pycache__/
+*.pyc
+*.pyo
+.vscode/
+backend/backend/venv/
+backend/venv/
