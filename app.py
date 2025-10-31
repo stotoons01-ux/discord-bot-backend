@@ -88,12 +88,24 @@ def oauth_exchange():
     }
 
     headers = { 'Content-Type': 'application/x-www-form-urlencoded' }
+
     try:
         resp = requests.post(token_url, data=payload, headers=headers, timeout=10)
     except Exception as e:
         return jsonify({'error': 'failed to contact Discord token endpoint', 'details': str(e)}), 502
 
-    return (resp.content, resp.status_code, dict(resp.headers))
+    # Always return JSON
+    try:
+        data = resp.json()
+    except Exception:
+        # If Discord returns non-JSON, return error
+        return jsonify({'error': 'Discord token endpoint returned invalid response', 'raw': resp.text}), resp.status_code
+
+    # If error from Discord, surface it
+    if resp.status_code != 200 or 'error' in data:
+        return jsonify({'error': data.get('error_description') or data.get('error') or 'Unknown error', 'raw': data}), resp.status_code
+
+    return jsonify(data), 200
 
 
 @app.route('/oauth/me')
